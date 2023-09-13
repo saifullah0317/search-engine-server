@@ -10,14 +10,10 @@ app = Flask(__name__)
 @app.route('/')
 def home():
     query = request.args.getlist('query')[0]
-    # print(f"query: {query}")
-    search_directory = "../documents"
+    search_directory = './api\static'
     documents = collect_documents(search_directory)
-    print(f"collect_documents: {documents}")
     document_index = index_documents(documents)
-    print(f"index_documents: {document_index}")
     results=search(query,document_index)
-    print(f"search results: {results}")
     try:
         if results:
             resp=[]
@@ -39,14 +35,12 @@ def home():
 # Step 2: Gather Documents
 def collect_documents(directory):
     documents = []
-    print(f"directory: {directory}")
-    for root, _, files in os.walk(directory):
-        print("check")
+    static_folder=os.path.abspath(directory)
+    for root, _, files in os.walk(static_folder):
         for filename in files:
             file_path = os.path.join(root, filename)
             if any(file_path.endswith(ext) for ext in (".pdf", ".docx", ".html", ".txt")):
                 documents.append(file_path)
-    print(f"Found documents: {documents}")
     return documents
 
 # Step 5: Read and Index Documents
