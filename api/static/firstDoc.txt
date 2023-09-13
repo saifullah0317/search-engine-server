@@ -1,0 +1,3 @@
+This is the first sample document. It contains some text for testing purposes.
+Feel free to add more text or modify it as needed.
+You can include keywords like "search," "engine," or "document" for testing.
