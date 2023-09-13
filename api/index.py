@@ -11,37 +11,42 @@ app = Flask(__name__)
 def home():
     query = request.args.getlist('query')[0]
     search_directory = './api\static'
-    documents = collect_documents(search_directory)
+    documents,filenames = collect_documents(search_directory,query)
     document_index = index_documents(documents)
     results=search(query,document_index)
     try:
-        if results:
-            resp=[]
-            for doc_path,count in results.items():
-                resp.append({
-                    "filename":os.path.basename(doc_path),
-                    "src":doc_path,
-                    "termFrequency":count
-                })
-            # return jsonify(resp, status=200, mimetype='application/json')
+        resp=[]
+        # if filenames:
+        for filename in filenames:
+            resp.append({
+                "filename":filename
+            })
+        # elif results:
+        for doc_path,count in results.items():
+            resp.append({
+                "filename":os.path.basename(doc_path),
+                "termFrequency":count
+            })
+        if resp:
             return jsonify(resp)
         else:
-            # return jsonify({"message":"no result matched !"}, status=200)
             return jsonify({"message":"no reuslt matched !"})
     except Exception as err:
-        # return jsonify({"error":err}, status=500)
         return jsonify({"error":err})
 
 # Step 2: Gather Documents
-def collect_documents(directory):
+def collect_documents(directory,query):
     documents = []
+    filenames = []
     static_folder=os.path.abspath(directory)
     for root, _, files in os.walk(static_folder):
         for filename in files:
             file_path = os.path.join(root, filename)
             if any(file_path.endswith(ext) for ext in (".pdf", ".docx", ".html", ".txt")):
                 documents.append(file_path)
-    return documents
+            if query.lower()==filename.lower():
+                filenames.append(filename)
+    return documents,filenames
 
 # Step 5: Read and Index Documents
 def extract_text_from_pdf(pdf_path):
