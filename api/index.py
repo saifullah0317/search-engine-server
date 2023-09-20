@@ -2,31 +2,33 @@ from flask import Flask,request, jsonify
 import os
 import re
 import PyPDF2
-import docx
+# import docx
+from docx import Document
 from bs4 import BeautifulSoup
+import io
+import requests
 
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    query = request.args.getlist('query')[0]
-    # search_directory = './static'
-    search_directory = './api\static'
-    # search_directory = os.path.abspath('./static')
-    documents,filenames = collect_documents(search_directory,query)
-    document_index = index_documents(documents)
-    results=search(query,document_index)
+    filenames=[]
+    document_index = extractText(filenames)
+    queries = request.args.getlist('query')
+    results=search(queries,document_index)
     try:
         resp=[]
-        for filename in filenames:
+        for filename,count in results.items():
             resp.append({
-                "filename":filename
-            })
-        for doc_path,count in results.items():
-            resp.append({
-                "filename":os.path.basename(doc_path),
+                "filename":filename,
                 "termFrequency":count
             })
+        for filename in filenames:
+            for query in queries:
+                if query in filename:
+                    resp.append({
+                        "filename":filename
+                    })
         if resp:
             return jsonify(resp)
         else:
@@ -34,80 +36,84 @@ def home():
     except Exception as err:
         return jsonify({"error":err})
 
-# Step 2: Gather Documents
-def collect_documents(directory,query):
-    documents = []
-    filenames = []
-    static_folder=os.path.abspath(directory)
-    for root, _, files in os.walk(static_folder):
-        for filename in files:
-            file_path = os.path.join(root, filename)
-            if any(file_path.endswith(ext) for ext in (".pdf", ".docx", ".html", ".txt")):
-                documents.append(file_path)
-            if query.lower()==filename.lower():
-                filenames.append(filename)
-    return documents,filenames
+# Step 2: Gather Documents, text extraction and indexing
+def extractText(filenames):
+    index={}
+    repo = 'saifullah0317/search-engine-documents'
+    folderpath = 'documents/'  # Remove 'tree/main' from the path
 
-# Step 5: Read and Index Documents
-def extract_text_from_pdf(pdf_path):
-    text = ""
-    with open(pdf_path, "rb") as pdf_file:
-        pdf_reader = PyPDF2.PdfReader(pdf_file)
-        for page_num in range(len(pdf_reader.pages)):  
-            page = pdf_reader.pages[page_num]
-            text += page.extract_text()
-    return text
+    # Create the API URL to list the contents of the folder
+    api_url = f'https://api.github.com/repos/{repo}/contents/{folderpath}'
 
-def extract_text_from_docx(docx_path):
-    text = ""
-    if os.path.exists(docx_path):  # Check if the file exists
-        doc = docx.Document(docx_path)
-        for paragraph in doc.paragraphs:
-            text += paragraph.text + "\n"
-    return text
+    # Use the GitHub API to get the list of files in the folder
+    response = requests.get(api_url)
+    if response.status_code == 200:
+        folder_contents = response.json()
 
-def extract_text_from_html(html_path):
-    with open(html_path, "r", encoding="utf-8") as html_file:
-        soup = BeautifulSoup(html_file, "html.parser")
-        text = soup.get_text()
-    return text
+        # Iterate through the files in the folder
+        for item in folder_contents:
+            if item['type'] == 'file':
+                file_path = item['path']
 
-def extract_text_from_txt(txt_path):
-    with open(txt_path, "r", encoding="utf-8") as txt_file:
-        text = txt_file.read()
-    return text
+                # Create the raw file URL
+                raw_url = f'https://raw.githubusercontent.com/{repo}/main/{file_path}'
 
-def index_documents(documents):
-    index = {}
-    for doc_path in documents:
-        if doc_path.endswith(".pdf"):
-            content = extract_text_from_pdf(doc_path)
-        elif doc_path.endswith(".docx"):
-            content = extract_text_from_docx(doc_path)
-        elif doc_path.endswith(".html"):
-            content = extract_text_from_html(doc_path)
-        elif doc_path.endswith(".txt"):
-            content = extract_text_from_txt(doc_path)
-        else:
-            content = ""  # Handle unsupported file types here
+                # Use requests to get the content of the file
+                file_response = requests.get(raw_url)
 
-        words = re.findall(r"\w+", content.lower())  # Tokenize words
-        for word in words:
-            if word not in index:
-                index[word] = []
-            index[word].append(doc_path)
-    return index
+                if file_response.status_code == 200:
+                    file_content = file_response.content
+                    file_name = os.path.basename(file_path)
+                    filenames.append(file_name)
+                    # Check file extension to determine how to process
+                    if file_name.endswith('.pdf'):
+                        # PDF file
+                        pdf = PyPDF2.PdfReader(io.BytesIO(file_content))
+                        text = ""
+                        for page_num in range(len(pdf.pages)):
+                            text += pdf.pages[page_num].extract_text()
+
+                    elif file_name.endswith('.docx'):
+                        # DOCX file
+                        doc = Document(io.BytesIO(file_content))
+                        text = ""
+                        for paragraph in doc.paragraphs:
+                            text += paragraph.text + "\n"
+
+                    elif file_name.endswith('.html'):
+                        # HTML file
+                        soup = BeautifulSoup(file_content, 'html.parser')
+                        text = soup.get_text()
+
+                    elif file_name.endswith('.txt'):
+                        # Plain text file
+                        text = file_content.decode('utf-8')
+
+                    else:
+                        continue
+                    words=re.findall(r"\w+", text.lower())
+                    for word in words:
+                        if word not in index:
+                            index[word]=[]
+                        index[word].append(file_name)
+                else:
+                    print(f'Failed to retrieve file content from GitHub: {file_path}')
+                    return
+        return index
+    else:
+        print('Failed to list folder contents from GitHub.')
+        return
 
 # Step 6: Build a Search Function
-def search(query, index):
-    query_words = re.findall(r"\w+", query.lower())
+def search(queries, index):
+    # query_words = re.findall(r"\w+", query.lower())
     matching_documents = {}
-    for word in query_words:
+    for word in queries:
         if word in index:
-            for doc_path in index[word]:
-                if doc_path not in matching_documents:
-                    matching_documents[doc_path] = 0
-                matching_documents[doc_path] += 1
+            for filename in index[word]:
+                if filename not in matching_documents:
+                    matching_documents[filename] = 0
+                matching_documents[filename] += 1
     return matching_documents
 
 if __name__=="__main__":
