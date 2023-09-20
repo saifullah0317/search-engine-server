@@ -10,20 +10,18 @@ app = Flask(__name__)
 @app.route('/')
 def home():
     query = request.args.getlist('query')[0]
-    search_directory = './static'
-    # search_directory = './api\static'
+    # search_directory = './static'
+    search_directory = './api\static'
     # search_directory = os.path.abspath('./static')
     documents,filenames = collect_documents(search_directory,query)
     document_index = index_documents(documents)
     results=search(query,document_index)
     try:
         resp=[]
-        # if filenames:
         for filename in filenames:
             resp.append({
                 "filename":filename
             })
-        # elif results:
         for doc_path,count in results.items():
             resp.append({
                 "filename":os.path.basename(doc_path),
