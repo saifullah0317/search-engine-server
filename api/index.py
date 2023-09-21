@@ -8,6 +8,7 @@ import io
 import requests
 import math
 from collections import Counter
+from flask_cors import CORS, cross_origin
 
 app = Flask(__name__)
 cors = CORS(app)
